@@ -233,7 +233,7 @@ function drawIndexChart() {
       var idx = parseInt(el.getAttribute('data-idx'));
       // Show crosshair
       container.querySelectorAll('.crosshair[data-idx="' + idx + '"]').forEach(function(c) { c.setAttribute('opacity', '0.5'); });
-      showTooltip(e, idx);
+      showTooltipIndex(e, idx);
     });
     el.addEventListener('mousemove', function(e) { moveTooltip(e); });
     el.addEventListener('mouseleave', function() {
@@ -302,7 +302,7 @@ function drawCountChart() {
     el.addEventListener('mouseenter', function(e) {
       var idx = parseInt(el.getAttribute('data-idx'));
       container.querySelectorAll('.crosshair-bar[data-idx="' + idx + '"]').forEach(function(c) { c.setAttribute('opacity', '0.4'); });
-      showTooltip(e, idx);
+      showTooltipCount(e, idx);
     });
     el.addEventListener('mousemove', function(e) { moveTooltip(e); });
     el.addEventListener('mouseleave', function() {
@@ -313,14 +313,27 @@ function drawCountChart() {
   });
 }
 
-function showTooltip(e, idx) {
+function showTooltipIndex(e, idx) {
   var row = allData[idx];
+  var prevRow = idx > 0 ? allData[idx - 1] : null;
   var tip = document.getElementById("tooltip");
   var html = '<div style="color:#e8e8e8;font-weight:600;margin-bottom:4px">' + row.date + '</div>';
-  html += '<div>Qualifiers: <span class="blue" style="font-weight:600">' + row.count + '</span></div>';
+  if (prevRow) {
+    html += '<div>T-1 Qualifiers: <span class="blue" style="font-weight:600">' + prevRow.count + '</span></div>';
+  }
   if (row.idx_1d !== null) html += '<div>1-Day: <span style="color:' + (row.idx_1d >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:600">' + fmtPct(row.idx_1d) + '</span></div>';
   if (row.idx_3d !== null) html += '<div>3-Day: <span style="color:' + (row.idx_3d >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:600">' + fmtPct(row.idx_3d) + '</span></div>';
   if (row.idx_5d !== null) html += '<div>5-Day: <span style="color:' + (row.idx_5d >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:600">' + fmtPct(row.idx_5d) + '</span></div>';
+  tip.innerHTML = html;
+  tip.style.display = "block";
+  moveTooltip(e);
+}
+
+function showTooltipCount(e, idx) {
+  var row = allData[idx];
+  var tip = document.getElementById("tooltip");
+  var html = '<div style="color:#e8e8e8;font-weight:600;margin-bottom:4px">' + row.date + '</div>';
+  html += '<div>EOD Qualifiers: <span class="blue" style="font-weight:600">' + row.count + '</span></div>';
   tip.innerHTML = html;
   tip.style.display = "block";
   moveTooltip(e);
