@@ -25,7 +25,8 @@
   .green { color: #22c55e; }
   .red { color: #ef4444; }
   .section-title { font-size: 12px; color: #888; margin-bottom: 8px; margin-top: 16px; text-transform: uppercase; letter-spacing: 1px; }
-  .chart-container { position: relative; margin-bottom: 8px; }
+  .chart-container { position: relative; margin-bottom: 8px; height: 220px; }
+  .chart-container.short { height: 180px; }
   .footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid #333; font-size: 12px; color: #888; display: flex; justify-content: space-between; }
   .loading { display: flex; align-items: center; justify-content: center; height: 80vh; color: #888; font-size: 14px; }
   canvas { max-width: 100%; }
@@ -121,10 +122,10 @@ function renderApp() {
     </div>
 
     <div class="section-title">${periodLabel} Return Index</div>
-    <div class="chart-container"><canvas id="indexChart" height="200"></canvas></div>
+    <div class="chart-container"><canvas id="indexChart"></canvas></div>
 
     <div class="section-title">Qualifier Count</div>
-    <div class="chart-container"><canvas id="countChart" height="170"></canvas></div>
+    <div class="chart-container short"><canvas id="countChart"></canvas></div>
 
     <div class="footer">
       <span>Screen: 52wk ≥200% OR StdDev ≥20% · Outside 20w/20m EMA envelope</span>
