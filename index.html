@@ -133,7 +133,13 @@ function renderApp() {
     </div>
   `;
 
-  renderCharts();
+  setTimeout(function() {
+    try {
+      renderCharts();
+    } catch(e) {
+      document.getElementById("indexChart").parentNode.innerHTML = '<div style="color:#ef4444;padding:20px;">Chart error: ' + e.message + '</div>';
+    }
+  }, 50);
 }
 
 function renderCharts() {
