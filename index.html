@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LOB Index</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0a; font-family: 'SF Mono', 'Consolas', 'Courier New', monospace; color: #c0c0c0; padding: 20px 24px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; border-bottom: 1px solid #333; padding-bottom: 16px; }
+  .title { font-size: 22px; font-weight: 700; color: #e8e8e8; letter-spacing: -0.5px; }
+  .subtitle { font-size: 13px; color: #888; margin-top: 4px; }
+  .update-label { font-size: 12px; color: #888; text-align: right; }
+  .update-date { font-size: 15px; color: #c0c0c0; text-align: right; }
+  .selector { display: flex; gap: 4px; margin-bottom: 16px; }
+  .selector button { background: transparent; color: #c0c0c0; border: 1px solid #333; padding: 5px 14px; font-size: 13px; font-family: inherit; cursor: pointer; border-radius: 3px; }
+  .selector button.active { font-weight: 700; color: #000; }
+  .stats { display: flex; gap: 32px; margin-bottom: 20px; font-size: 14px; }
+  .value { font-weight: 600; font-size: 20px; }
+  .delta { font-size: 13px; margin-left: 6px; }
+  .dim { color: #888; }
+  .blue { color: #04adff; }
+  .green { color: #22c55e; }
+  .red { color: #ef4444; }
+  .section-title { font-size: 12px; color: #888; margin-bottom: 8px; margin-top: 16px; text-transform: uppercase; letter-spacing: 1px; }
+  .chart-area { width: 100%; overflow: hidden; margin-bottom: 12px; }
+  .footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid #333; font-size: 12px; color: #888; display: flex; justify-content: space-between; }
+  .loading { display: flex; align-items: center; justify-content: center; height: 80vh; color: #888; font-size: 14px; }
+  svg text { font-family: 'SF Mono', 'Consolas', 'Courier New', monospace; }
+  .tooltip-box { position: absolute; background: #141414; border: 1px solid #333; padding: 10px 14px; font-size: 12px; line-height: 1.6; pointer-events: none; display: none; z-index: 10; max-width: 340px; }
+</style>
+</head>
+<body>
+
+<div id="app" class="loading">Loading index data...</div>
+<div id="tooltip" class="tooltip-box"></div>
+
+<script>
+var SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQnzcwluHeuSLgz9h2E_iZ9V7w4c7SvCqqyCcw9RGsGin79sC1h3D0nHhNcd4Hu05M_UOn1t0T01E5q/pub?output=csv";
+
+var PERIODS = [
+  { key: "idx_1d", label: "1-Day", color: "#f59e0b" },
+  { key: "idx_3d", label: "3-Day", color: "#a78bfa" },
+  { key: "idx_5d", label: "5-Day", color: "#04adff" }
+];
+
+var currentPeriod = "idx_5d";
+var allData = [];
+
+function fmtPct(v) {
+  if (v === null || v === undefined || isNaN(v)) return "";
+  return (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
+}
+
+function fmtDate(d) {
+  var p = d.split("-");
+  return parseInt(p[1]) + "/" + parseInt(p[2]);
+}
+
+function getPeriod() {
+  for (var i = 0; i < PERIODS.length; i++) {
+    if (PERIODS[i].key === currentPeriod) return PERIODS[i];
+  }
+  return PERIODS[2];
+}
+
+function loadData() {
+  fetch(SHEET_CSV_URL)
+    .then(function(r) { return r.text(); })
+    .then(function(csv) {
+      var parsed = Papa.parse(csv, { header: true, skipEmptyLines: true });
+      allData = parsed.data.map(function(row) {
+        return {
+          date: row["Date"] || "",
+          count: parseInt(row["Qualifier Count"]) || 0,
+          idx_1d: row["Index 1d"] ? parseFloat(row["Index 1d"]) * 100 : null,
+          idx_3d: row["Index 3d"] ? parseFloat(row["Index 3d"]) * 100 : null,
+          idx_5d: row["Index 5d"] ? parseFloat(row["Index 5d"]) * 100 : null,
+          symbols: row["Symbols"] || ""
+        };
+      });
+      render();
+    })
+    .catch(function(e) {
+      document.getElementById("app").innerHTML = '<div class="loading" style="color:#ef4444;">Failed to load: ' + e.message + '</div>';
+    });
+}
+
+function render() {
+  var latest = allData[allData.length - 1];
+  var prev = allData.length > 1 ? allData[allData.length - 2] : null;
+  var countDelta = prev ? latest.count - prev.count : 0;
+  var p = getPeriod();
+  var latestIdx = latest[currentPeriod];
+
+  var deltaHtml = "";
+  if (countDelta !== 0) {
+    deltaHtml = '<span class="delta ' + (countDelta > 0 ? "green" : "red") + '">' + (countDelta > 0 ? "+" : "") + countDelta + '</span>';
+  }
+
+  var idxHtml = "";
+  if (latestIdx !== null && latestIdx !== undefined) {
+    idxHtml = '<div><span class="dim">' + p.label + ' </span><span class="value ' + (latestIdx >= 0 ? "green" : "red") + '">' + fmtPct(latestIdx) + '</span></div>';
+  }
+
+  var btns = PERIODS.map(function(pp) {
+    var cls = pp.key === currentPeriod ? "active" : "";
+    var sty = pp.key === currentPeriod ? "background:" + pp.color + ";border-color:" + pp.color + ";" : "";
+    return '<button class="' + cls + '" style="' + sty + '" onclick="switchPeriod(\'' + pp.key + '\')">' + pp.label + '</button>';
+  }).join("");
+
+  var html = '<div class="header"><div>';
+  html += '<div class="title">LOB Index</div>';
+  html += '<div class="subtitle">Bounce Profile + Outside Envelope · Equal-weight avg return of T-1 qualifiers</div>';
+  html += '</div><div><div class="update-label">Last update</div>';
+  html += '<div class="update-date">' + latest.date + '</div></div></div>';
+  html += '<div class="selector">' + btns + '</div>';
+  html += '<div class="stats"><div><span class="dim">Qualifiers </span><span class="value blue">' + latest.count + '</span>' + deltaHtml + '</div>';
+  html += idxHtml;
+  html += '<div><span class="dim">Sessions </span><span>' + allData.length + '</span></div></div>';
+  html += '<div class="section-title">' + p.label + ' Return Index</div>';
+  html += '<div class="chart-area" id="indexArea"></div>';
+  html += '<div class="section-title">Qualifier Count</div>';
+  html += '<div class="chart-area" id="countArea"></div>';
+  html += '<div class="footer"><span>Screen: 52wk ≥200% OR StdDev ≥20% · Outside 20w/20m EMA envelope</span><span>~1040 All Liquid Stocks</span></div>';
+
+  document.getElementById("app").innerHTML = html;
+  drawIndexChart();
+  drawCountChart();
+}
+
+function drawIndexChart() {
+  var container = document.getElementById("indexArea");
+  var W = container.clientWidth || 800;
+  var H = 220;
+  var pad = { t: 15, r: 15, b: 30, l: 65 };
+  var cw = W - pad.l - pad.r;
+  var ch = H - pad.t - pad.b;
+  var p = getPeriod();
+
+  // Collect data points with index values
+  var vals = allData.map(function(d) { return d[currentPeriod]; });
+  var hasAny = vals.some(function(v) { return v !== null; });
+
+  // Y range
+  var numVals = vals.filter(function(v) { return v !== null; });
+  var yMin, yMax;
+  if (numVals.length > 0) {
+    yMin = Math.min.apply(null, numVals);
+    yMax = Math.max.apply(null, numVals);
+  } else {
+    yMin = -1; yMax = 1;
+  }
+  var yPad = Math.max(Math.abs(yMax), Math.abs(yMin), 0.01) * 0.25;
+  yMin -= yPad; yMax += yPad;
+
+  function xPos(i) { return pad.l + (i / (allData.length - 1)) * cw; }
+  function yPos(v) { return pad.t + ch - ((v - yMin) / (yMax - yMin)) * ch; }
+
+  var svg = '<svg width="' + W + '" height="' + H + '" xmlns="http://www.w3.org/2000/svg">';
+
+  // Grid lines
+  var gridSteps = 5;
+  for (var g = 0; g <= gridSteps; g++) {
+    var gv = yMin + (yMax - yMin) * (g / gridSteps);
+    var gy = yPos(gv);
+    svg += '<line x1="' + pad.l + '" y1="' + gy + '" x2="' + (W - pad.r) + '" y2="' + gy + '" stroke="#1e1e1e" stroke-dasharray="2,4" />';
+    svg += '<text x="' + (pad.l - 8) + '" y="' + (gy + 4) + '" fill="#888" font-size="11" text-anchor="end">' + fmtPct(gv) + '</text>';
+  }
+
+  // Zero line
+  if (yMin < 0 && yMax > 0) {
+    var zy = yPos(0);
+    svg += '<line x1="' + pad.l + '" y1="' + zy + '" x2="' + (W - pad.r) + '" y2="' + zy + '" stroke="#444" stroke-dasharray="3,3" />';
+  }
+
+  // X axis labels
+  var step = Math.max(1, Math.floor(allData.length / 10));
+  for (var i = 0; i < allData.length; i += step) {
+    svg += '<text x="' + xPos(i) + '" y="' + (H - 5) + '" fill="#888" font-size="11" text-anchor="middle">' + fmtDate(allData[i].date) + '</text>';
+  }
+
+  // Line + dots
+  if (hasAny) {
+    var segments = [];
+    var dots = [];
+    var prev = null;
+    for (var i = 0; i < allData.length; i++) {
+      var v = vals[i];
+      if (v !== null) {
+        var cx = xPos(i);
+        var cy = yPos(v);
+        if (prev !== null) {
+          segments.push({ x1: prev.x, y1: prev.y, x2: cx, y2: cy });
+        }
+        dots.push({ x: cx, y: cy, i: i });
+        prev = { x: cx, y: cy };
+      } else {
+        prev = null;
+      }
+    }
+
+    for (var s = 0; s < segments.length; s++) {
+      svg += '<line x1="' + segments[s].x1 + '" y1="' + segments[s].y1 + '" x2="' + segments[s].x2 + '" y2="' + segments[s].y2 + '" stroke="' + p.color + '" stroke-width="2" />';
+    }
+
+    for (var d = 0; d < dots.length; d++) {
+      svg += '<circle cx="' + dots[d].x + '" cy="' + dots[d].y + '" r="4" fill="#0a0a0a" stroke="' + p.color + '" stroke-width="2" />';
+      svg += '<circle cx="' + dots[d].x + '" cy="' + dots[d].y + '" r="12" fill="transparent" data-idx="' + dots[d].i + '" class="hover-dot" />';
+    }
+  }
+
+  svg += '</svg>';
+  container.innerHTML = svg;
+
+  // Hover events
+  container.querySelectorAll('.hover-dot').forEach(function(el) {
+    el.addEventListener('mouseenter', function(e) { showTooltip(e, parseInt(el.getAttribute('data-idx'))); });
+    el.addEventListener('mouseleave', hideTooltip);
+  });
+}
+
+function drawCountChart() {
+  var container = document.getElementById("countArea");
+  var W = container.clientWidth || 800;
+  var H = 190;
+  var pad = { t: 10, r: 15, b: 30, l: 65 };
+  var cw = W - pad.l - pad.r;
+  var ch = H - pad.t - pad.b;
+
+  var counts = allData.map(function(d) { return d.count; });
+  var maxC = Math.max.apply(null, counts);
+  var minC = Math.min.apply(null, counts);
+  var cPad = Math.ceil((maxC - minC) * 0.15);
+  var yMin = Math.max(0, minC - cPad);
+  var yMax = maxC + cPad;
+
+  var barW = Math.max(4, Math.min(14, (cw / allData.length) * 0.7));
+  var gap = cw / allData.length;
+
+  function yPos(v) { return pad.t + ch - ((v - yMin) / (yMax - yMin)) * ch; }
+
+  var svg = '<svg width="' + W + '" height="' + H + '" xmlns="http://www.w3.org/2000/svg">';
+
+  // Grid
+  var gridSteps = 4;
+  for (var g = 0; g <= gridSteps; g++) {
+    var gv = yMin + (yMax - yMin) * (g / gridSteps);
+    var gy = yPos(gv);
+    svg += '<line x1="' + pad.l + '" y1="' + gy + '" x2="' + (W - pad.r) + '" y2="' + gy + '" stroke="#1e1e1e" stroke-dasharray="2,4" />';
+    svg += '<text x="' + (pad.l - 8) + '" y="' + (gy + 4) + '" fill="#888" font-size="11" text-anchor="end">' + Math.round(gv) + '</text>';
+  }
+
+  // X labels
+  var step = Math.max(1, Math.floor(allData.length / 10));
+  for (var i = 0; i < allData.length; i += step) {
+    var bx = pad.l + i * gap + gap / 2;
+    svg += '<text x="' + bx + '" y="' + (H - 5) + '" fill="#888" font-size="11" text-anchor="middle">' + fmtDate(allData[i].date) + '</text>';
+  }
+
+  // Bars
+  for (var i = 0; i < allData.length; i++) {
+    var bx = pad.l + i * gap + (gap - barW) / 2;
+    var bh = ((counts[i] - yMin) / (yMax - yMin)) * ch;
+    var by = pad.t + ch - bh;
+    svg += '<rect x="' + bx + '" y="' + by + '" width="' + barW + '" height="' + bh + '" fill="rgba(4,173,255,0.6)" rx="2" />';
+    svg += '<rect x="' + (pad.l + i * gap) + '" y="' + pad.t + '" width="' + gap + '" height="' + ch + '" fill="transparent" data-idx="' + i + '" class="hover-bar" />';
+  }
+
+  svg += '</svg>';
+  container.innerHTML = svg;
+
+  container.querySelectorAll('.hover-bar').forEach(function(el) {
+    el.addEventListener('mouseenter', function(e) { showTooltip(e, parseInt(el.getAttribute('data-idx'))); });
+    el.addEventListener('mouseleave', hideTooltip);
+  });
+}
+
+function showTooltip(e, idx) {
+  var row = allData[idx];
+  var tip = document.getElementById("tooltip");
+  var html = '<div style="color:#e8e8e8;font-weight:600;margin-bottom:4px">' + row.date + '</div>';
+  html += '<div>Qualifiers: <span class="blue" style="font-weight:600">' + row.count + '</span></div>';
+  if (row.idx_1d !== null) html += '<div>1-Day: <span style="color:' + (row.idx_1d >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:600">' + fmtPct(row.idx_1d) + '</span></div>';
+  if (row.idx_3d !== null) html += '<div>3-Day: <span style="color:' + (row.idx_3d >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:600">' + fmtPct(row.idx_3d) + '</span></div>';
+  if (row.idx_5d !== null) html += '<div>5-Day: <span style="color:' + (row.idx_5d >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:600">' + fmtPct(row.idx_5d) + '</span></div>';
+  if (row.symbols) html += '<div style="color:#888;margin-top:6px;font-size:10px;word-break:break-all;line-height:1.4;max-width:300px">' + row.symbols + '</div>';
+  tip.innerHTML = html;
+  tip.style.display = "block";
+  tip.style.left = Math.min(e.pageX + 12, window.innerWidth - 360) + "px";
+  tip.style.top = (e.pageY - 20) + "px";
+}
+
+function hideTooltip() {
+  document.getElementById("tooltip").style.display = "none";
+}
+
+function switchPeriod(p) {
+  currentPeriod = p;
+  render();
+}
+
+loadData();
+</script>
+</body>
+</html>
