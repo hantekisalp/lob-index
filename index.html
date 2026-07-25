@@ -126,6 +126,7 @@ function render() {
   html += '<div class="footer"><span>Screen: 52wk ≥200% OR StdDev ≥20% · Outside 20w/20m EMA envelope</span><span>~1040 All Liquid Stocks</span></div>';
 
   document.getElementById("app").innerHTML = html;
+  document.getElementById("app").className = "";
   drawIndexChart();
   drawCountChart();
 }
