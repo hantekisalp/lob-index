@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LOB Index</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0a; font-family: 'SF Mono', 'Consolas', 'Courier New', monospace; color: #c0c0c0; }
+  #root { min-height: 100vh; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+const { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } = Recharts;
+
+const SHEET_CSV_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vQnzcwluHeuSLgz9h2E_iZ9V7w4c7SvCqqyCcw9RGsGin79sC1h3D0nHhNcd4Hu05M_UOn1t0T01E5q/pub?output=csv";
+
+const PERIODS = [
+  { key: "idx_1d", label: "1-Day", color: "#f59e0b" },
+  { key: "idx_3d", label: "3-Day", color: "#a78bfa" },
+  { key: "idx_5d", label: "5-Day", color: "#04adff" },
+];
+
+const C = {
+  bg: "#0a0a0a",
+  panel: "#141414",
+  border: "#333",
+  grid: "#1e1e1e",
+  text: "#c0c0c0",
+  textBright: "#e8e8e8",
+  textDim: "#888",
+  blue: "#04adff",
+  green: "#22c55e",
+  red: "#ef4444",
+  zero: "#444",
+};
+
+function formatDate(d) {
+  const parts = d.split("-");
+  return parseInt(parts[1]) + "/" + parseInt(parts[2]);
+}
+
+function formatPct(v) {
+  if (v === null || v === undefined) return "";
+  return (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
+}
+
+function CustomTooltip({ active, payload }) {
+  if (!active || !payload || !payload.length) return null;
+  const row = payload[0] && payload[0].payload;
+  if (!row) return null;
+
+  return React.createElement("div", {
+    style: {
+      background: C.panel, border: "1px solid " + C.border,
+      padding: "10px 14px", fontSize: 13, lineHeight: 1.6,
+      fontFamily: "'SF Mono', 'Consolas', monospace", maxWidth: 320,
+    }
+  },
+    React.createElement("div", { style: { color: C.textBright, fontWeight: 600, marginBottom: 4 } }, row.date),
+    React.createElement("div", { style: { color: C.text } },
+      "Qualifiers: ",
+      React.createElement("span", { style: { color: C.blue, fontWeight: 600 } }, row.count)
+    ),
+    PERIODS.map(function(p) {
+      if (row[p.key] === null || row[p.key] === undefined) return null;
+      return React.createElement("div", { key: p.key, style: { color: C.text } },
+        p.label + ": ",
+        React.createElement("span", {
+          style: { color: row[p.key] >= 0 ? C.green : C.red, fontWeight: 600 }
+        }, formatPct(row[p.key]))
+      );
+    }),
+    row.symbols ? React.createElement("div", {
+      style: { color: C.textDim, marginTop: 6, fontSize: 10, wordBreak: "break-all", lineHeight: 1.4 }
+    }, row.symbols) : null
+  );
+}
+
+function LOBIndexChart() {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const [selectedPeriod, setSelectedPeriod] = useState("idx_5d");
+  const [dataSource, setDataSource] = useState("");
+
+  const loadData = useCallback(async () => {
+    try {
+      const resp = await fetch(SHEET_CSV_URL);
+      if (resp.ok) {
+        const csvText = await resp.text();
+        const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+        if (parsed.data && parsed.data.length > 0) {
+          const rows = parsed.data.map(function(row) {
+            return {
+              date: row["Date"] || "",
+              count: parseInt(row["Qualifier Count"]) || 0,
+              idx_1d: row["Index 1d"] ? parseFloat(row["Index 1d"]) * 100 : null,
+              idx_3d: row["Index 3d"] ? parseFloat(row["Index 3d"]) * 100 : null,
+              idx_5d: row["Index 5d"] ? parseFloat(row["Index 5d"]) * 100 : null,
+              symbols: row["Symbols"] || "",
+            };
+          });
+          setData(rows);
+          setLastUpdate(rows[rows.length - 1].date);
+          setDataSource("live");
+          setLoading(false);
+          return;
+        }
+      }
+      setDataSource("fetch-error");
+    } catch (e) {
+      setDataSource("error: " + e.message);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(function() { loadData(); }, [loadData]);
+
+  if (loading) {
+    return <div style={{ background: C.bg, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.textDim }}>
+      Loading index data...
+    </div>;
+  }
+
+  if (data.length === 0) {
+    return <div style={{ background: C.bg, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.red }}>
+      Failed to load data ({dataSource})
+    </div>;
+  }
+
+  const activePeriod = PERIODS.find(function(p) { return p.key === selectedPeriod; });
+  const latestRow = data[data.length - 1];
+  const prevRow = data.length > 1 ? data[data.length - 2] : null;
+  const countDelta = prevRow ? latestRow.count - prevRow.count : 0;
+
+  const counts = data.map(function(d) { return d.count; });
+  const maxCount = Math.max.apply(null, counts);
+  const minCount = Math.min.apply(null, counts);
+  const countPad = Math.ceil((maxCount - minCount) * 0.15);
+
+  const indexData = data.filter(function(d) { return d[selectedPeriod] !== null && d[selectedPeriod] !== undefined; });
+  const indices = indexData.map(function(d) { return d[selectedPeriod]; });
+  const maxIdx = indices.length > 0 ? Math.max.apply(null, indices) : 1;
+  const minIdx = indices.length > 0 ? Math.min.apply(null, indices) : -1;
+  const idxPad = Math.max(Math.abs(maxIdx), Math.abs(minIdx), 0.001) * 0.2;
+  const latestIdx = latestRow ? latestRow[selectedPeriod] : null;
+
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", padding: "20px 24px", fontFamily: "'SF Mono', 'Consolas', monospace", color: C.text }}>
+
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, borderBottom: "1px solid " + C.border, paddingBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: C.textBright, letterSpacing: "-0.5px" }}>LOB Index</div>
+          <div style={{ fontSize: 13, color: C.textDim, marginTop: 4 }}>Bounce Profile + Outside Envelope · Equal-weight avg return of T-1 qualifiers</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 12, color: C.textDim }}>Last update</div>
+          <div style={{ fontSize: 15, color: C.text }}>{lastUpdate}</div>
+        </div>
+      </div>
+
+      {/* Period selector */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
+        {PERIODS.map(function(p) {
+          return <button key={p.key} onClick={function() { setSelectedPeriod(p.key); }} style={{
+            background: selectedPeriod === p.key ? p.color : "transparent",
+            color: selectedPeriod === p.key ? "#000" : C.text,
+            border: "1px solid " + (selectedPeriod === p.key ? p.color : C.border),
+            padding: "5px 14px", fontSize: 13, fontFamily: "'SF Mono', 'Consolas', monospace",
+            fontWeight: selectedPeriod === p.key ? 700 : 400, cursor: "pointer", borderRadius: 3,
+          }}>{p.label}</button>;
+        })}
+      </div>
+
+      {/* Stats bar */}
+      <div style={{ display: "flex", gap: 32, marginBottom: 20, fontSize: 14 }}>
+        <div>
+          <span style={{ color: C.textDim }}>Qualifiers </span>
+          <span style={{ color: C.blue, fontWeight: 600, fontSize: 20 }}>{latestRow.count}</span>
+          {countDelta !== 0 && <span style={{ color: countDelta > 0 ? C.green : C.red, marginLeft: 6, fontSize: 13 }}>
+            {countDelta > 0 ? "+" : ""}{countDelta}
+          </span>}
+        </div>
+        {latestIdx !== null && latestIdx !== undefined && <div>
+          <span style={{ color: C.textDim }}>{activePeriod.label} </span>
+          <span style={{ color: latestIdx >= 0 ? C.green : C.red, fontWeight: 600, fontSize: 20 }}>{formatPct(latestIdx)}</span>
+        </div>}
+        <div>
+          <span style={{ color: C.textDim }}>Sessions </span>
+          <span style={{ color: C.text }}>{data.length}</span>
+        </div>
+      </div>
+
+      {/* Index line chart */}
+      {indexData.length > 0 && <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 12, color: C.textDim, marginBottom: 6, textTransform: "uppercase", letterSpacing: "1px" }}>
+          {activePeriod.label} Return Index
+        </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <ComposedChart data={data} margin={{ top: 8, right: 12, left: 8, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="2 4" stroke={C.grid} vertical={false} />
+            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: C.textDim, fontSize: 12 }} axisLine={{ stroke: C.border }} tickLine={false}
+              interval={Math.max(0, Math.floor(data.length / 10) - 1)} />
+            <YAxis tickFormatter={formatPct} tick={{ fill: C.textDim, fontSize: 12 }} axisLine={false} tickLine={false}
+              domain={[minIdx - idxPad, maxIdx + idxPad]} width={62} />
+            <ReferenceLine y={0} stroke={C.zero} strokeDasharray="3 3" />
+            <Tooltip content={<CustomTooltip />} />
+            <Line type="monotone" dataKey={selectedPeriod} stroke={activePeriod.color} strokeWidth={2} connectNulls={false}
+              dot={{ r: 3, fill: C.bg, stroke: activePeriod.color, strokeWidth: 2 }}
+              activeDot={{ r: 5, fill: activePeriod.color, stroke: C.bg, strokeWidth: 2 }} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>}
+
+      {/* Qualifier count histogram */}
+      <div>
+        <div style={{ fontSize: 12, color: C.textDim, marginBottom: 6, marginTop: 12, textTransform: "uppercase", letterSpacing: "1px" }}>
+          Qualifier Count
+        </div>
+        <ResponsiveContainer width="100%" height={200}>
+          <ComposedChart data={data} margin={{ top: 8, right: 12, left: 8, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="2 4" stroke={C.grid} vertical={false} />
+            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: C.textDim, fontSize: 12 }} axisLine={{ stroke: C.border }} tickLine={false}
+              interval={Math.max(0, Math.floor(data.length / 10) - 1)} />
+            <YAxis tick={{ fill: C.textDim, fontSize: 12 }} axisLine={false} tickLine={false}
+              domain={[Math.max(0, minCount - countPad), maxCount + countPad]} width={62} />
+            <Tooltip content={<CustomTooltip />} />
+            <Bar dataKey="count" radius={[2, 2, 0, 0]} maxBarSize={14} fill="#04adff" fillOpacity={0.6} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Footer */}
+      <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid " + C.border, fontSize: 12, color: C.textDim, display: "flex", justifyContent: "space-between" }}>
+        <span>Screen: 52wk ≥200% OR StdDev ≥20% · Outside 20w/20m EMA envelope</span>
+        <span>Source: {dataSource} · ~1040 All Liquid Stocks</span>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<LOBIndexChart />, document.getElementById("root"));
+</script>
+</body>
+</html>
