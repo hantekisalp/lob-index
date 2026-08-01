@@ -23,7 +23,6 @@
   .blue { color: #04adff; }
   .green { color: #22c55e; }
   .red { color: #ef4444; }
-  .section-title { font-size: 12px; color: #888; margin-bottom: 8px; margin-top: 16px; text-transform: uppercase; letter-spacing: 1px; }
   .chart-scroll { width: 100%; overflow-x: auto; overflow-y: hidden; margin-bottom: 12px; }
   .chart-scroll svg { display: block; }
   .footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid #333; font-size: 12px; color: #888; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
@@ -74,7 +73,7 @@ function getPeriod() {
 
 function getChartWidth() {
   var available = document.getElementById("app").clientWidth || window.innerWidth - 48;
-  var needed = allData.length * MIN_PX_PER_BAR + 80;
+  var needed = allData.length * MIN_PX_PER_BAR + 100;
   return Math.max(available, needed);
 }
 
@@ -125,75 +124,117 @@ function render() {
 
   var html = '<div class="header"><div>';
   html += '<div class="title">LOB Index</div>';
-  html += '<div class="subtitle">Bounce Profile + Outside Envelope · Equal-weight avg return of T-1 qualifiers</div>';
+  html += '<div class="subtitle">Bounce Profile + Outside Envelope \u00b7 Equal-weight avg return of T-1 qualifiers</div>';
   html += '</div><div><div class="update-label">Last update</div>';
   html += '<div class="update-date">' + latest.date + '</div></div></div>';
   html += '<div class="selector">' + btns + '</div>';
-  html += '<div class="stats"><div><span class="dim">Qualifiers </span><span class="value blue">' + latest.count + '</span>' + deltaHtml + '</div>';
+  html += '<div class="stats"><div><span class="dim">LOB Count </span><span class="value blue">' + latest.count + '</span>' + deltaHtml + '</div>';
   html += idxHtml;
   html += '<div><span class="dim">Sessions </span><span>' + allData.length + '</span></div></div>';
-  html += '<div class="section-title">' + p.label + ' Return Index</div>';
-  html += '<div class="chart-scroll" id="indexScroll"><div id="indexArea"></div></div>';
-  html += '<div class="section-title">Qualifier Count</div>';
-  html += '<div class="chart-scroll" id="countScroll"><div id="countArea"></div></div>';
-  html += '<div class="footer"><span>Screen: 52wk \u2265200% OR StdDev \u226520% · Outside 20w/20m EMA envelope</span><span>~1040 All Liquid Stocks</span></div>';
+  html += '<div class="chart-scroll" id="chartScroll"><div id="chartArea"></div></div>';
+  html += '<div class="footer"><span>Screen: 52wk \u2265200% OR StdDev \u226520% \u00b7 Outside 20w/20m EMA envelope</span><span>~1040 All Liquid Stocks</span></div>';
 
   document.getElementById("app").innerHTML = html;
   document.getElementById("app").className = "";
-  drawIndexChart();
-  drawCountChart();
+  drawCombinedChart();
 }
 
-function drawIndexChart() {
-  var container = document.getElementById("indexArea");
+function drawCombinedChart() {
+  var container = document.getElementById("chartArea");
   var W = getChartWidth();
-  var H = 240;
-  var pad = { t: 15, r: 20, b: 32, l: 65 };
+  var totalH = 480;
+  var pad = { t: 20, r: 20, b: 32, l: 65 };
+
+  // Layout: index area top 60%, count area bottom 30%, gap 10%
+  var indexH = (totalH - pad.t - pad.b) * 0.58;
+  var gapH = 35;
+  var countH = (totalH - pad.t - pad.b) * 0.32;
+
+  var indexTop = pad.t;
+  var indexBot = indexTop + indexH;
+  var countTop = indexBot + gapH;
+  var countBot = countTop + countH;
   var cw = W - pad.l - pad.r;
-  var ch = H - pad.t - pad.b;
+
   var p = getPeriod();
 
+  // ── Index data ──
   var vals = allData.map(function(d) { return d[currentPeriod]; });
   var hasAny = vals.some(function(v) { return v !== null; });
-
   var numVals = vals.filter(function(v) { return v !== null; });
-  var yMin, yMax;
+  var yMinI, yMaxI;
   if (numVals.length > 0) {
-    yMin = Math.min.apply(null, numVals);
-    yMax = Math.max.apply(null, numVals);
-  } else { yMin = -1; yMax = 1; }
-  var yPad = Math.max(Math.abs(yMax), Math.abs(yMin), 0.01) * 0.25;
-  yMin -= yPad; yMax += yPad;
+    yMinI = Math.min.apply(null, numVals);
+    yMaxI = Math.max.apply(null, numVals);
+  } else { yMinI = -1; yMaxI = 1; }
+  var yPadI = Math.max(Math.abs(yMaxI), Math.abs(yMinI), 0.01) * 0.25;
+  yMinI -= yPadI; yMaxI += yPadI;
 
-  function xPos(i) { return pad.l + (i / Math.max(1, allData.length - 1)) * cw; }
-  function yPos(v) { return pad.t + ch - ((v - yMin) / (yMax - yMin)) * ch; }
+  // ── Count data ──
+  var counts = allData.map(function(d) { return d.count; });
+  var maxC = Math.max.apply(null, counts);
+  var minC = Math.min.apply(null, counts);
+  var cPadC = Math.ceil((maxC - minC) * 0.15);
+  var yMinC = Math.max(0, minC - cPadC);
+  var yMaxC = maxC + cPadC;
 
-  var svg = '<svg width="' + W + '" height="' + H + '" xmlns="http://www.w3.org/2000/svg">';
+  // Shared x
+  var gap = cw / allData.length;
+  var barW = Math.max(3, Math.min(10, gap * 0.55));
 
-  // Horizontal grid
+  function xPos(i) { return pad.l + i * gap + gap / 2; }
+  function yPosI(v) { return indexTop + indexH - ((v - yMinI) / (yMaxI - yMinI)) * indexH; }
+  function yPosC(v) { return countTop + countH - ((v - yMinC) / (yMaxC - yMinC)) * countH; }
+
+  var svg = '<svg width="' + W + '" height="' + totalH + '" xmlns="http://www.w3.org/2000/svg">';
+
+  // ── Section labels ──
+  svg += '<text x="' + pad.l + '" y="' + (indexTop - 6) + '" fill="#888" font-size="11" text-transform="uppercase" letter-spacing="1">' + p.label.toUpperCase() + ' RETURN INDEX</text>';
+  svg += '<text x="' + pad.l + '" y="' + (countTop - 8) + '" fill="#888" font-size="11">LOB COUNT</text>';
+
+  // ── Index: horizontal grid ──
   var gridSteps = 5;
   for (var g = 0; g <= gridSteps; g++) {
-    var gv = yMin + (yMax - yMin) * (g / gridSteps);
-    var gy = yPos(gv);
+    var gv = yMinI + (yMaxI - yMinI) * (g / gridSteps);
+    var gy = yPosI(gv);
     svg += '<line x1="' + pad.l + '" y1="' + gy + '" x2="' + (W - pad.r) + '" y2="' + gy + '" stroke="#1e1e1e" stroke-dasharray="2,4" />';
     svg += '<text x="' + (pad.l - 8) + '" y="' + (gy + 4) + '" fill="#888" font-size="11" text-anchor="end">' + fmtPct(gv) + '</text>';
   }
 
-  // Vertical grid lines
-  var step = Math.max(1, Math.floor(allData.length / 10));
-  for (var i = 0; i < allData.length; i += step) {
-    var vx = xPos(i);
-    svg += '<line x1="' + vx + '" y1="' + pad.t + '" x2="' + vx + '" y2="' + (pad.t + ch) + '" stroke="#1a1a1a" stroke-dasharray="2,6" />';
-    svg += '<text x="' + vx + '" y="' + (H - 8) + '" fill="#888" font-size="11" text-anchor="middle">' + fmtDate(allData[i].date) + '</text>';
-  }
-
-  // Zero line
-  if (yMin < 0 && yMax > 0) {
-    var zy = yPos(0);
+  // Index: zero line
+  if (yMinI < 0 && yMaxI > 0) {
+    var zy = yPosI(0);
     svg += '<line x1="' + pad.l + '" y1="' + zy + '" x2="' + (W - pad.r) + '" y2="' + zy + '" stroke="#444" stroke-dasharray="3,3" />';
   }
 
-  // Line + dots
+  // ── Count: horizontal grid ──
+  var gridStepsC = 4;
+  for (var g = 0; g <= gridStepsC; g++) {
+    var gv = yMinC + (yMaxC - yMinC) * (g / gridStepsC);
+    var gy = yPosC(gv);
+    svg += '<line x1="' + pad.l + '" y1="' + gy + '" x2="' + (W - pad.r) + '" y2="' + gy + '" stroke="#1e1e1e" stroke-dasharray="2,4" />';
+    svg += '<text x="' + (pad.l - 8) + '" y="' + (gy + 4) + '" fill="#888" font-size="11" text-anchor="end">' + Math.round(gv) + '</text>';
+  }
+
+  // ── Shared vertical grid + x labels ──
+  var step = Math.max(1, Math.floor(allData.length / 10));
+  for (var i = 0; i < allData.length; i += step) {
+    var vx = xPos(i);
+    // Vertical line spanning both charts
+    svg += '<line x1="' + vx + '" y1="' + indexTop + '" x2="' + vx + '" y2="' + countBot + '" stroke="#1a1a1a" stroke-dasharray="2,6" />';
+    // X label at bottom
+    svg += '<text x="' + vx + '" y="' + (countBot + 18) + '" fill="#888" font-size="11" text-anchor="middle">' + fmtDate(allData[i].date) + '</text>';
+  }
+
+  // ── Count bars ──
+  for (var i = 0; i < allData.length; i++) {
+    var bx = xPos(i) - barW / 2;
+    var bh = Math.max(1, ((counts[i] - yMinC) / (yMaxC - yMinC)) * countH);
+    var by = countTop + countH - bh;
+    svg += '<rect x="' + bx + '" y="' + by + '" width="' + barW + '" height="' + bh + '" fill="rgba(4,173,255,0.5)" rx="1" />';
+  }
+
+  // ── Index line + dots ──
   if (hasAny) {
     var segments = [];
     var dots = [];
@@ -202,7 +243,7 @@ function drawIndexChart() {
       var v = vals[i];
       if (v !== null) {
         var cx = xPos(i);
-        var cy = yPos(v);
+        var cy = yPosI(v);
         if (prev !== null) {
           segments.push({ x1: prev.x, y1: prev.y, x2: cx, y2: cy });
         }
@@ -219,21 +260,27 @@ function drawIndexChart() {
 
     for (var d = 0; d < dots.length; d++) {
       svg += '<circle cx="' + dots[d].x + '" cy="' + dots[d].y + '" r="4" fill="#0a0a0a" stroke="' + p.color + '" stroke-width="2" />';
-      // Vertical crosshair line (full height, hidden until hover)
-      svg += '<line x1="' + dots[d].x + '" y1="' + pad.t + '" x2="' + dots[d].x + '" y2="' + (pad.t + ch) + '" stroke="' + p.color + '" stroke-width="1" stroke-dasharray="2,3" opacity="0" class="crosshair" data-idx="' + dots[d].i + '" />';
-      svg += '<rect x="' + (dots[d].x - 15) + '" y="' + pad.t + '" width="30" height="' + ch + '" fill="transparent" data-idx="' + dots[d].i + '" data-cx="' + dots[d].x + '" class="hover-zone" />';
     }
+  }
+
+  // ── Full-height hover zones + crosshairs ──
+  for (var i = 0; i < allData.length; i++) {
+    var hx = xPos(i);
+    // Crosshair spans both charts
+    svg += '<line x1="' + hx + '" y1="' + indexTop + '" x2="' + hx + '" y2="' + countBot + '" stroke="' + p.color + '" stroke-width="1" stroke-dasharray="2,3" opacity="0" class="crosshair" data-idx="' + i + '" />';
+    // Hover zone spans full height
+    svg += '<rect x="' + (pad.l + i * gap) + '" y="' + indexTop + '" width="' + gap + '" height="' + (countBot - indexTop) + '" fill="transparent" data-idx="' + i + '" class="hover-zone" />';
   }
 
   svg += '</svg>';
   container.innerHTML = svg;
 
+  // ── Hover events ──
   container.querySelectorAll('.hover-zone').forEach(function(el) {
     el.addEventListener('mouseenter', function(e) {
       var idx = parseInt(el.getAttribute('data-idx'));
-      // Show crosshair
-      container.querySelectorAll('.crosshair[data-idx="' + idx + '"]').forEach(function(c) { c.setAttribute('opacity', '0.5'); });
-      showTooltipIndex(e, idx);
+      container.querySelectorAll('.crosshair[data-idx="' + idx + '"]').forEach(function(c) { c.setAttribute('opacity', '0.4'); });
+      showTooltip(e, idx);
     });
     el.addEventListener('mousemove', function(e) { moveTooltip(e); });
     el.addEventListener('mouseleave', function() {
@@ -244,96 +291,21 @@ function drawIndexChart() {
   });
 }
 
-function drawCountChart() {
-  var container = document.getElementById("countArea");
-  var W = getChartWidth();
-  var H = 190;
-  var pad = { t: 10, r: 20, b: 32, l: 65 };
-  var cw = W - pad.l - pad.r;
-  var ch = H - pad.t - pad.b;
-
-  var counts = allData.map(function(d) { return d.count; });
-  var maxC = Math.max.apply(null, counts);
-  var minC = Math.min.apply(null, counts);
-  var cPad = Math.ceil((maxC - minC) * 0.15);
-  var yMin = Math.max(0, minC - cPad);
-  var yMax = maxC + cPad;
-
-  var gap = cw / allData.length;
-  var barW = Math.max(3, Math.min(10, gap * 0.55));
-
-  function yPos(v) { return pad.t + ch - ((v - yMin) / (yMax - yMin)) * ch; }
-
-  var svg = '<svg width="' + W + '" height="' + H + '" xmlns="http://www.w3.org/2000/svg">';
-
-  // Horizontal grid
-  var gridSteps = 4;
-  for (var g = 0; g <= gridSteps; g++) {
-    var gv = yMin + (yMax - yMin) * (g / gridSteps);
-    var gy = yPos(gv);
-    svg += '<line x1="' + pad.l + '" y1="' + gy + '" x2="' + (W - pad.r) + '" y2="' + gy + '" stroke="#1e1e1e" stroke-dasharray="2,4" />';
-    svg += '<text x="' + (pad.l - 8) + '" y="' + (gy + 4) + '" fill="#888" font-size="11" text-anchor="end">' + Math.round(gv) + '</text>';
-  }
-
-  // Vertical grid + x labels
-  var step = Math.max(1, Math.floor(allData.length / 10));
-  for (var i = 0; i < allData.length; i += step) {
-    var bx = pad.l + i * gap + gap / 2;
-    svg += '<line x1="' + bx + '" y1="' + pad.t + '" x2="' + bx + '" y2="' + (pad.t + ch) + '" stroke="#1a1a1a" stroke-dasharray="2,6" />';
-    svg += '<text x="' + bx + '" y="' + (H - 8) + '" fill="#888" font-size="11" text-anchor="middle">' + fmtDate(allData[i].date) + '</text>';
-  }
-
-  // Bars + hover zones
-  for (var i = 0; i < allData.length; i++) {
-    var bx = pad.l + i * gap + (gap - barW) / 2;
-    var bh = Math.max(1, ((counts[i] - yMin) / (yMax - yMin)) * ch);
-    var by = pad.t + ch - bh;
-    svg += '<rect x="' + bx + '" y="' + by + '" width="' + barW + '" height="' + bh + '" fill="rgba(4,173,255,0.6)" rx="1" />';
-    // Crosshair line
-    var cx = pad.l + i * gap + gap / 2;
-    svg += '<line x1="' + cx + '" y1="' + pad.t + '" x2="' + cx + '" y2="' + (pad.t + ch) + '" stroke="#04adff" stroke-width="1" stroke-dasharray="2,3" opacity="0" class="crosshair-bar" data-idx="' + i + '" />';
-    svg += '<rect x="' + (pad.l + i * gap) + '" y="' + pad.t + '" width="' + gap + '" height="' + (ch + pad.b) + '" fill="transparent" data-idx="' + i + '" class="hover-bar" />';
-  }
-
-  svg += '</svg>';
-  container.innerHTML = svg;
-
-  container.querySelectorAll('.hover-bar').forEach(function(el) {
-    el.addEventListener('mouseenter', function(e) {
-      var idx = parseInt(el.getAttribute('data-idx'));
-      container.querySelectorAll('.crosshair-bar[data-idx="' + idx + '"]').forEach(function(c) { c.setAttribute('opacity', '0.4'); });
-      showTooltipCount(e, idx);
-    });
-    el.addEventListener('mousemove', function(e) { moveTooltip(e); });
-    el.addEventListener('mouseleave', function() {
-      var idx = parseInt(el.getAttribute('data-idx'));
-      container.querySelectorAll('.crosshair-bar[data-idx="' + idx + '"]').forEach(function(c) { c.setAttribute('opacity', '0'); });
-      hideTooltip();
-    });
-  });
-}
-
-function showTooltipIndex(e, idx) {
+function showTooltip(e, idx) {
   var row = allData[idx];
   var prevRow = idx > 0 ? allData[idx - 1] : null;
   var tip = document.getElementById("tooltip");
   var html = '<div style="color:#e8e8e8;font-weight:600;margin-bottom:4px">' + row.date + '</div>';
-  if (prevRow) {
-    html += '<div>T-1 Qualifiers: <span class="blue" style="font-weight:600">' + prevRow.count + '</span></div>';
+  // Index section (T-1)
+  var hasIdx = row.idx_1d !== null || row.idx_3d !== null || row.idx_5d !== null;
+  if (hasIdx && prevRow) {
+    html += '<div style="color:#888;margin-top:4px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px">T-1 Qualifiers: ' + prevRow.count + '</div>';
+    if (row.idx_1d !== null) html += '<div>1-Day: <span style="color:' + (row.idx_1d >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:600">' + fmtPct(row.idx_1d) + '</span></div>';
+    if (row.idx_3d !== null) html += '<div>3-Day: <span style="color:' + (row.idx_3d >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:600">' + fmtPct(row.idx_3d) + '</span></div>';
+    if (row.idx_5d !== null) html += '<div>5-Day: <span style="color:' + (row.idx_5d >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:600">' + fmtPct(row.idx_5d) + '</span></div>';
   }
-  if (row.idx_1d !== null) html += '<div>1-Day: <span style="color:' + (row.idx_1d >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:600">' + fmtPct(row.idx_1d) + '</span></div>';
-  if (row.idx_3d !== null) html += '<div>3-Day: <span style="color:' + (row.idx_3d >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:600">' + fmtPct(row.idx_3d) + '</span></div>';
-  if (row.idx_5d !== null) html += '<div>5-Day: <span style="color:' + (row.idx_5d >= 0 ? '#22c55e' : '#ef4444') + ';font-weight:600">' + fmtPct(row.idx_5d) + '</span></div>';
-  tip.innerHTML = html;
-  tip.style.display = "block";
-  moveTooltip(e);
-}
-
-function showTooltipCount(e, idx) {
-  var row = allData[idx];
-  var tip = document.getElementById("tooltip");
-  var html = '<div style="color:#e8e8e8;font-weight:600;margin-bottom:4px">' + row.date + '</div>';
-  html += '<div>EOD Qualifiers: <span class="blue" style="font-weight:600">' + row.count + '</span></div>';
+  // Count section
+  html += '<div style="margin-top:6px">EOD Qualifiers: <span class="blue" style="font-weight:600">' + row.count + '</span></div>';
   tip.innerHTML = html;
   tip.style.display = "block";
   moveTooltip(e);
@@ -345,7 +317,6 @@ function moveTooltip(e) {
   var tipH = tip.offsetHeight || 100;
   var x = e.clientX + 16;
   var y = e.clientY - tipH - 12;
-  // Keep on screen
   if (x + tipW > window.innerWidth - 10) x = e.clientX - tipW - 16;
   if (y < 10) y = e.clientY + 16;
   tip.style.left = x + "px";
@@ -361,15 +332,11 @@ function switchPeriod(p) {
   render();
 }
 
-// Responsive resize
 var resizeTimer;
 window.addEventListener('resize', function() {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(function() {
-    if (allData.length > 0) {
-      drawIndexChart();
-      drawCountChart();
-    }
+    if (allData.length > 0) drawCombinedChart();
   }, 200);
 });
 
