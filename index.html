@@ -34,6 +34,33 @@
     pointer-events: none; display: none; z-index: 100; max-width: 340px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.5);
   }
+  .detail-panel {
+    margin-top: 12px; padding: 14px 16px; background: #141414;
+    border: 1px solid #333; border-radius: 4px; display: none;
+  }
+  .detail-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px;
+  }
+  .detail-date { color: #e8e8e8; font-weight: 600; font-size: 14px; }
+  .detail-count { color: #888; font-size: 13px; }
+  .detail-symbols {
+    color: #c0c0c0; font-size: 12px; line-height: 1.8;
+    word-break: break-all; user-select: all;
+  }
+  .copy-btn {
+    background: #04adff; color: #000; border: none;
+    padding: 5px 14px; font-size: 12px; font-family: inherit;
+    font-weight: 600; cursor: pointer; border-radius: 3px;
+  }
+  .copy-btn:hover { background: #38bfff; }
+  .copy-btn.copied { background: #22c55e; }
+  .detail-close {
+    background: transparent; border: 1px solid #333; color: #888;
+    padding: 4px 10px; font-size: 12px; font-family: inherit;
+    cursor: pointer; border-radius: 3px; margin-left: 8px;
+  }
+  .detail-close:hover { color: #c0c0c0; border-color: #555; }
 </style>
 </head>
 <body>
@@ -132,6 +159,7 @@ function render() {
   html += idxHtml;
   html += '<div><span class="dim">Sessions </span><span>' + allData.length + '</span></div></div>';
   html += '<div class="chart-scroll" id="chartScroll"><div id="chartArea"></div></div>';
+  html += '<div class="detail-panel" id="detailPanel"><div class="detail-header"><div><span class="detail-date" id="detailDate"></span> <span class="detail-count" id="detailCount"></span></div><div><button class="copy-btn" id="copyBtn" onclick="copySymbols()">Copy</button><button class="detail-close" onclick="closeDetail()">\u2715</button></div></div><div class="detail-symbols" id="detailSymbols"></div></div>';
   html += '<div class="footer"><span>Screen: 52wk \u2265200% OR StdDev \u226520% \u00b7 Outside 20w/20m EMA envelope</span><span>~1040 All Liquid Stocks</span></div>';
 
   document.getElementById("app").innerHTML = html;
@@ -288,6 +316,10 @@ function drawCombinedChart() {
       container.querySelectorAll('.crosshair[data-idx="' + idx + '"]').forEach(function(c) { c.setAttribute('opacity', '0'); });
       hideTooltip();
     });
+    el.addEventListener('click', function() {
+      var idx = parseInt(el.getAttribute('data-idx'));
+      showDetail(idx);
+    });
   });
 }
 
@@ -325,6 +357,46 @@ function moveTooltip(e) {
 
 function hideTooltip() {
   document.getElementById("tooltip").style.display = "none";
+}
+
+var selectedSymbols = "";
+
+function showDetail(idx) {
+  var row = allData[idx];
+  var panel = document.getElementById("detailPanel");
+  document.getElementById("detailDate").textContent = row.date;
+  document.getElementById("detailCount").textContent = "(" + row.count + " symbols)";
+
+  if (row.symbols) {
+    var syms = row.symbols.split(",").sort();
+    selectedSymbols = syms.join(" ");
+    document.getElementById("detailSymbols").textContent = syms.join("  ");
+  } else {
+    selectedSymbols = "";
+    document.getElementById("detailSymbols").textContent = "No symbol data for this date";
+  }
+
+  var btn = document.getElementById("copyBtn");
+  btn.textContent = "Copy";
+  btn.className = "copy-btn";
+  panel.style.display = "block";
+}
+
+function copySymbols() {
+  if (!selectedSymbols) return;
+  navigator.clipboard.writeText(selectedSymbols).then(function() {
+    var btn = document.getElementById("copyBtn");
+    btn.textContent = "Copied";
+    btn.className = "copy-btn copied";
+    setTimeout(function() {
+      btn.textContent = "Copy";
+      btn.className = "copy-btn";
+    }, 2000);
+  });
+}
+
+function closeDetail() {
+  document.getElementById("detailPanel").style.display = "none";
 }
 
 function switchPeriod(p) {
