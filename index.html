@@ -369,7 +369,7 @@ function showDetail(idx) {
 
   if (row.symbols) {
     var syms = row.symbols.split(",").sort();
-    selectedSymbols = syms.join(" ");
+    selectedSymbols = syms.join("\n");
     document.getElementById("detailSymbols").textContent = syms.join("  ");
   } else {
     selectedSymbols = "";
